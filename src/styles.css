@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-cream: #FDFBF7;
+  --color-brand-accent: #1574FF;
+}
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  background-color: var(--color-brand-cream);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(at 0% 0%, hsla(38,100%,96%,1) 0, transparent 50%),
+    radial-gradient(at 50% 0%, hsla(22,100%,94%,1) 0, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(45,100%,95%,1) 0, transparent 50%);
+}
+
+.btn-bounce:active {
+  transform: scale(0.95);
+}
+
+.card-elevated {
+  box-shadow:
+    0 10px 25px -5px rgba(0, 0, 0, 0.05),
+    0 8px 10px -6px rgba(0, 0, 0, 0.05),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
