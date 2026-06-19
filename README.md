@@ -4,13 +4,6 @@
 
 这个仓库只保留 SAM2 一个功能，不包含 OgSpirit 平台首页、工具列表、登录、用户系统和历史记录。前端页面从原 OgSpirit 的 `apps/sam2` 模块拆出，功能和交互尽量保持原样。
 
-## 当前状态
-
-- 前端代码已在本仓库内，可以直接安装依赖并启动。
-- SAM2 模型推理后端不在本仓库内，历史上部署在 AutoDL 数据盘 `/root/autodl-tmp/sam2-api/`。
-- 如果只启动前端，可以打开页面，但上传视频会失败，因为没有可用的 SAM2 后端 API。
-- 要跑完整流程，需要恢复或重建 SAM2 后端，并让前端的 `VITE_SAM2_API_URL` 指向该后端。
-
 ## 快速启动前端
 
 环境要求：
@@ -51,7 +44,7 @@ VITE_SAM2_API_URL=http://你的后端地址/sam2/api/v1
 
 修改 `.env.local` 后需要重启前端开发服务。
 
-## 完整功能依赖
+## 后端接口
 
 前端期望 SAM2 后端提供这些接口：
 
@@ -82,7 +75,3 @@ npm run build      # 构建生产包
 npm run preview    # 本地预览构建结果
 npm run typecheck  # TypeScript 类型检查
 ```
-
-## 文档
-
-- [项目架构说明](docs/ARCHITECTURE.md)
