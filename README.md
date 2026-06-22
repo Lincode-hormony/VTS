@@ -30,13 +30,21 @@ npm run dev -- --port 3001
 
 ## 配置 SAM2 后端地址
 
-默认后端地址：
+开发环境默认连接已部署的 AutoDL 后端：
+
+```text
+https://u184490-8409-90945147.westb.seetacloud.com:8443/sam2/api/v1
+```
+
+如果该后端正在运行，拉取仓库后直接启动前端即可使用完整功能。
+
+代码里的兜底后端地址：
 
 ```text
 http://localhost:6006/sam2/api/v1
 ```
 
-如果后端部署在其他机器，复制 `.env.example` 为 `.env.local`，然后修改：
+如果要临时改用其他后端，复制 `.env.example` 为 `.env.local`，然后修改：
 
 ```text
 VITE_SAM2_API_URL=http://你的后端地址/sam2/api/v1
