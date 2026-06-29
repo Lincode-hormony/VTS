@@ -1,86 +1,94 @@
-# Sam2Tool
+# VTS (Video-To-Sheet)
 
-独立版 SAM2 视频目标分割与序列帧提取工具。
+把"参考图 → 动作视频 → 透明序列帧 → 精灵图/ZIP"做成一条闭环的网页工具。
 
-这个仓库只保留 SAM2 一个功能，不包含 OgSpirit 平台首页、工具列表、登录、用户系统和历史记录。前端页面从原 OgSpirit 的 `apps/sam2` 模块拆出，功能和交互尽量保持原样。
+四步流程：
 
-## 快速启动前端
+1. **创建角色** — 上传参考图，在统一画布里调位置和缩放
+2. **图生视频** — 调用火山引擎 Seedance，把角色图当首尾帧生成动作视频
+3. **SAM2 抽帧** — 视频送到 AutoDL 上的 SAM2 服务，交互式点选目标，拿到透明背景序列帧
+4. **最终产物** — 任选其一下载：
+   - **GIF 循环预览**（背景色可选）
+   - **横向精灵图 PNG**（列数可调，带智能推荐）
+   - **PNG 序列帧 ZIP**
 
-环境要求：
+三种产物从同一份帧字节派生，像素严格一致。
 
-- Node.js 18 或更高版本
-- npm
+## 快速开始
 
-```powershell
+环境：Node.js 18+ / npm
+
+```bash
+git clone https://github.com/Lincode-hormony/VTS.git
+cd VTS
 npm install
+cp .env.example .env.local
+# 编辑 .env.local，填入 ARK_API_KEY (火山引擎 ARK 平台获取)
 npm run dev
 ```
 
-默认访问：
+打开 http://127.0.0.1:3000（被占自动用 3001/3002...）。
 
-```text
-http://127.0.0.1:3000
-```
+## 环境变量
 
-如果 3000 端口被占用：
-
-```powershell
-npm run dev -- --port 3001
-```
-
-## 配置 SAM2 后端地址
-
-开发环境默认连接已部署的 AutoDL 后端：
-
-```text
-https://u184490-8409-90945147.westb.seetacloud.com:8443/sam2/api/v1
-```
-
-如果该后端正在运行，拉取仓库后直接启动前端即可使用完整功能。
-
-代码里的兜底后端地址：
-
-```text
-http://localhost:6006/sam2/api/v1
-```
-
-如果要临时改用其他后端，复制 `.env.example` 为 `.env.local`，然后修改：
-
-```text
-VITE_SAM2_API_URL=http://你的后端地址/sam2/api/v1
-```
-
-修改 `.env.local` 后需要重启前端开发服务。
-
-## 后端接口
-
-前端期望 SAM2 后端提供这些接口：
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `POST` | `/upload` | 上传视频并创建任务 |
-| `POST` | `/import-url` | 后端从远端视频 URL 下载素材并创建任务 |
-| `POST` | `/tasks/:taskId/click` | 添加前景/背景点 |
-| `POST` | `/tasks/:taskId/undo` | 撤销上一个点 |
-| `POST` | `/tasks/:taskId/reset` | 清空点 |
-| `POST` | `/tasks/:taskId/generate` | 开始生成序列帧 |
-| `GET` | `/tasks/:taskId` | 查询任务状态 |
-| `GET` | `/tasks/:taskId/frame/0` | 获取第一帧 |
-| `GET` | `/tasks/:taskId/mask` | 获取当前 mask 预览 |
-| `GET` | `/tasks/:taskId/frames/:index` | 获取指定结果帧 |
-| `GET` | `/tasks/:taskId/download` | 下载 ZIP 结果包 |
-
-注意：表格中的路径是相对于 `VITE_SAM2_API_URL` 的路径。例如默认配置下，上传接口完整地址是：
-
-```text
-http://localhost:6006/sam2/api/v1/upload
-```
+| 变量 | 含义 | dev 配置位置 | prod 配置位置 |
+|---|---|---|---|
+| `VITE_SAM2_API_URL` | SAM2 服务公网地址 | `.env.local` | `wrangler.toml` `[vars]` |
+| `ARK_API_KEY` | 火山引擎 API Key | `.env.local` | `wrangler pages secret put` |
+| `SEEDANCE_ENDPOINT` | 火山 Seedance API（可选，有默认值） | `.env.local` | `wrangler.toml` `[vars]` |
+| `VITE_SEEDANCE_PROXY_URL` | 前端调的相对路径，默认 `/api/seedance/tasks` | `.env.local` | — |
 
 ## 常用命令
 
-```powershell
-npm run dev        # 启动开发服务
-npm run build      # 构建生产包
-npm run preview    # 本地预览构建结果
-npm run typecheck  # TypeScript 类型检查
+```bash
+npm run dev          # 启动开发服务器
+npm run build        # 生产构建（包含 _worker.js 拷贝）
+npm run preview      # 本地预览构建结果
+npm run typecheck    # TypeScript 类型检查
 ```
+
+## 部署到 Cloudflare Pages
+
+```bash
+# 首次：配置 production secret
+echo 'ark-xxx' | npx wrangler pages secret put ARK_API_KEY --project-name sam2-tool
+
+# 每次发布
+npm run build
+npx wrangler pages deploy dist --project-name sam2-tool --branch main --commit-dirty=true
+
+# 健康检查
+curl https://sam2-tool.pages.dev/api/seedance/tasks/health
+# 期望: ok=true / hasArkKey=true
+```
+
+生产域名：[sam2-tool.pages.dev](https://sam2-tool.pages.dev)
+
+## 架构（一图速览）
+
+```
+浏览器
+  │
+  ├─ /api/seedance/tasks → [dev: vite middleware] / [prod: pages-worker.mjs]
+  │                         加 ARK_API_KEY 后转发火山 Seedance
+  │
+  └─ VITE_SAM2_API_URL   → AutoDL 上的 SAM2 服务（dev/prod 同一个）
+```
+
+参考图直接以 base64 data URL 形式塞进火山请求体，**无中间对象存储**。
+
+## 外部依赖
+
+- **火山引擎 Seedance**（[控制台](https://console.volcengine.com)）— 图生视频
+- **AutoDL SAM2 实例** — 视频抽帧。启停方式见 [`AUTODL_BACKEND_GUIDE.md`](./AUTODL_BACKEND_GUIDE.md)
+- **Cloudflare Pages** — 生产托管
+
+## 进一步阅读
+
+- [`仓库文档说明.md`](./仓库文档说明.md) — 给后续 agent 的详细上手地图（目录结构、数据流、不变式、坑点）
+- [`AUTODL_BACKEND_GUIDE.md`](./AUTODL_BACKEND_GUIDE.md) — SAM2 后端 AutoDL 启停
+- [`docs/`](./docs) — Godot 导出 / `_frame_data.json` / PromptSpec 等未来方向规划（目前未实现）
+
+## 技术栈
+
+React 19 · TypeScript · Vite 6 · Tailwind 4 · gifenc · jszip · Cloudflare Pages
