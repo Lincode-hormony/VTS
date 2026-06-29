@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ToolWorkspace } from './components/ToolWorkspace';
+import { VideoFusionWorkspace } from './components/VideoFusionWorkspace';
 import './styles.css';
 
 const rootElement = document.getElementById('root');
@@ -10,6 +10,6 @@ if (!rootElement) {
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <ToolWorkspace />
+    <VideoFusionWorkspace />
   </React.StrictMode>
 );

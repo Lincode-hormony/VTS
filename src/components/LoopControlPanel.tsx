@@ -1,158 +1,251 @@
-import { useState } from 'react';
-import { Wand2 } from 'lucide-react';
-import type { FrameData } from '../utils/frameProcessor';
-import { findBestLoop, generateLoopPreview, generateSpriteSheet } from '../utils/frameProcessor';
+import { useMemo, useState } from "react";
+import { Loader2, Wand2 } from "lucide-react";
+import type { FrameData, MaterializedFrames } from "../utils/frameProcessor";
+import {
+  buildFramesZipUrl,
+  findBestLoop,
+  generateLoopPreviewFromBlobs,
+  generateSpriteSheetFromBlobs,
+  materializeFinalFrames,
+  recommendSpriteColumns,
+} from "../utils/frameProcessor";
+
+export interface FinalArtifacts {
+  materialized: MaterializedFrames;
+  gifUrl: string;
+  zipUrl: string;
+  spriteUrl: string;
+  spriteColumns: number;
+  frameCount: number;
+  fps: number;
+  backgroundColor: string;
+}
 
 interface LoopControlPanelProps {
   frames: FrameData[];
   onFramesSelected: (indices: number[]) => void;
-  onPreviewGenerated?: (previewUrl: string, spriteUrl: string) => void;
+  previewFps: number;
+  onPreviewFpsChange: (fps: number) => void;
+  previewBackground: string;
+  onPreviewBackgroundChange: (color: string) => void;
+  onArtifactsGenerated?: (result: FinalArtifacts) => void;
 }
 
-const DEFAULT_MIN_SPAN = 8;
-const DEFAULT_MAX_SPAN = 48;
+const DEFAULT_MIN_SPAN = 80;
+const FIXED_MAX_SPAN = 97;
 
-export function LoopControlPanel({ frames, onFramesSelected, onPreviewGenerated }: LoopControlPanelProps) {
+export function LoopControlPanel({
+  frames,
+  onFramesSelected,
+  previewFps,
+  onPreviewFpsChange,
+  previewBackground,
+  onPreviewBackgroundChange,
+  onArtifactsGenerated,
+}: LoopControlPanelProps) {
   const [detecting, setDetecting] = useState(false);
+  const [generatingPreview, setGeneratingPreview] = useState(false);
   const [loopResult, setLoopResult] = useState<string | null>(null);
   const [minSpan, setMinSpan] = useState(DEFAULT_MIN_SPAN);
-  const [maxSpan, setMaxSpan] = useState(DEFAULT_MAX_SPAN);
-  const [pingpong, setPingpong] = useState(true);
+  const [workProgress, setWorkProgress] = useState(0);
+  const [workMessage, setWorkMessage] = useState<string | null>(null);
 
-  const handleAutoLoop = async (): Promise<void> => {
+  const selectedFrames = useMemo(() => frames.filter((frame) => frame.selected), [frames]);
+  const normalizedMinSpan = Math.max(2, Math.min(minSpan || DEFAULT_MIN_SPAN, FIXED_MAX_SPAN));
+  const isWorking = detecting || generatingPreview;
+
+  const updateWork = (message: string, progress?: number) => {
+    setWorkMessage(message);
+    if (typeof progress === "number") {
+      setWorkProgress(Math.max(0, Math.min(1, progress)));
+    }
+  };
+
+  const buildArtifactsFromFrames = async (targetFrames: FrameData[]) => {
+    updateWork("正在物化最终帧", 0);
+    const materialized = await materializeFinalFrames(targetFrames, (msg, p) => {
+      updateWork(msg, typeof p === "number" ? p * 0.3 : undefined);
+    });
+
+    updateWork("正在生成 GIF 预览", 0.3);
+    const gifUrl = await generateLoopPreviewFromBlobs(
+      materialized.blobs,
+      materialized.width,
+      materialized.height,
+      previewFps,
+      previewBackground,
+      (msg, p) => updateWork(msg, typeof p === "number" ? 0.3 + p * 0.4 : undefined),
+    );
+
+    const spriteColumns = recommendSpriteColumns(
+      materialized.blobs.length,
+      materialized.width,
+      materialized.height,
+    );
+    updateWork("正在生成横向精灵图", 0.7);
+    const spriteUrl = await generateSpriteSheetFromBlobs(
+      materialized.blobs,
+      materialized.width,
+      materialized.height,
+      spriteColumns,
+      (msg, p) => updateWork(msg, typeof p === "number" ? 0.7 + p * 0.15 : undefined),
+    );
+
+    updateWork("正在打包 PNG 序列帧", 0.85);
+    const zipUrl = await buildFramesZipUrl(materialized.blobs, (msg, p) =>
+      updateWork(msg, typeof p === "number" ? 0.85 + p * 0.15 : undefined),
+    );
+
+    onArtifactsGenerated?.({
+      materialized,
+      gifUrl,
+      zipUrl,
+      spriteUrl,
+      spriteColumns,
+      frameCount: materialized.blobs.length,
+      fps: previewFps,
+      backgroundColor: previewBackground,
+    });
+  };
+
+  const handleFindLoop = async (): Promise<void> => {
     setDetecting(true);
-    setLoopResult('正在检测最佳闭环...');
+    setGeneratingPreview(false);
+    setLoopResult("正在查找闭环");
+    setWorkProgress(0);
+    setWorkMessage("正在准备检测");
 
     try {
-      const indices = await findBestLoop(frames, minSpan, maxSpan);
+      const indices = await findBestLoop(frames, normalizedMinSpan, FIXED_MAX_SPAN, updateWork);
 
       if (indices.length === 0) {
-        setLoopResult(`未找到 ${minSpan}-${maxSpan} 帧长度的闭环，请尝试调整范围`);
+        setLoopResult(`未找到 ${normalizedMinSpan}-${FIXED_MAX_SPAN} 帧范围内的闭环`);
         return;
       }
 
       onFramesSelected(indices);
-
-      const selectedFrames = frames.filter(f => indices.includes(f.index));
-      const preview = await generateLoopPreview(selectedFrames, 12, pingpong);
-      const sprite = await generateSpriteSheet(selectedFrames, 4);
-
-      if (onPreviewGenerated) {
-        onPreviewGenerated(preview, sprite);
-      }
-
-      setLoopResult(`找到闭环：帧 ${indices[0]} → ${indices[indices.length - 1]}，共 ${indices.length} 帧`);
+      const loopFrames = frames.filter((frame) => indices.includes(frame.index));
+      await buildArtifactsFromFrames(loopFrames);
+      setLoopResult(`已选择闭环：帧 ${indices[0]} 到 ${indices[indices.length - 1]}，共 ${indices.length} 帧`);
     } catch (error) {
-      setLoopResult(`检测失败：${error instanceof Error ? error.message : '未知错误'}`);
+      setLoopResult(`查找失败：${error instanceof Error ? error.message : "未知错误"}`);
     } finally {
       setDetecting(false);
+      setWorkProgress(0);
+      setWorkMessage(null);
     }
   };
 
   const handleGeneratePreview = async (): Promise<void> => {
-    const selectedFrames = frames.filter(f => f.selected);
-
     if (selectedFrames.length < 2) {
-      alert('请至少选择 2 帧');
+      setLoopResult("请至少选择 2 帧后再生成预览");
       return;
     }
 
     try {
-      const preview = await generateLoopPreview(selectedFrames, 12, pingpong);
-      const sprite = await generateSpriteSheet(selectedFrames, 4);
-
-      if (onPreviewGenerated) {
-        onPreviewGenerated(preview, sprite);
-      }
+      setGeneratingPreview(true);
+      setLoopResult(null);
+      setWorkProgress(0);
+      await buildArtifactsFromFrames(selectedFrames);
     } catch (error) {
-      alert(`生成失败：${error instanceof Error ? error.message : '未知错误'}`);
+      setLoopResult(`生成失败：${error instanceof Error ? error.message : "未知错误"}`);
+    } finally {
+      setGeneratingPreview(false);
+      setWorkProgress(0);
+      setWorkMessage(null);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* 自动闭环按钮 */}
-      <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-100">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h4 className="font-semibold text-purple-900 flex items-center gap-2">
-              <Wand2 className="w-4 h-4" />
-              自动闭环检测
-            </h4>
-            <p className="text-xs text-purple-700 mt-1">
-              自动找到最相似的起始和结束帧，形成循环动画
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div>
-            <label className="text-xs text-purple-700 block mb-1">最小长度</label>
+    <div className="space-y-4">
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-32 flex-1">
+            <label className="block text-xs font-medium text-gray-600">最短帧数</label>
             <input
               type="number"
               value={minSpan}
-              onChange={(e) => setMinSpan(Math.max(2, parseInt(e.target.value) || 2))}
-              className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500"
+              onChange={(event) => setMinSpan(Math.max(2, Number.parseInt(event.target.value, 10) || 2))}
               min={2}
+              max={FIXED_MAX_SPAN}
+              className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-blue-600 focus:outline-none"
             />
           </div>
-          <div>
-            <label className="text-xs text-purple-700 block mb-1">最大长度</label>
+          <div className="min-w-28 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+            <span className="block text-xs text-gray-500">最长帧数</span>
+            <strong className="text-sm text-gray-900">{FIXED_MAX_SPAN}</strong>
+          </div>
+          <div className="min-w-28">
+            <label className="block text-xs font-medium text-gray-600">预览 FPS</label>
             <input
               type="number"
-              value={maxSpan}
-              onChange={(e) => setMaxSpan(Math.max(minSpan, parseInt(e.target.value) || minSpan))}
-              className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500"
-              min={2}
+              value={previewFps}
+              min={1}
+              max={60}
+              onChange={(event) => onPreviewFpsChange(Math.max(1, Number.parseInt(event.target.value, 10) || 1))}
+              className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-blue-600 focus:outline-none"
+            />
+          </div>
+          <div className="min-w-40">
+            <label className="block text-xs font-medium text-gray-600">预览背景</label>
+            <input
+              type="color"
+              value={previewBackground}
+              onChange={(event) => onPreviewBackgroundChange(event.target.value)}
+              className="mt-1 h-10 w-full rounded-lg border border-gray-300 bg-white px-1"
             />
           </div>
         </div>
 
-        <div className="flex items-center gap-2 mb-3">
-          <input
-            type="checkbox"
-            id="pingpong"
-            checked={pingpong}
-            onChange={(e) => setPingpong(e.target.checked)}
-            className="w-4 h-4 text-purple-600 rounded"
-          />
-          <label htmlFor="pingpong" className="text-sm text-purple-700">
-            Ping-Pong 往返循环
-          </label>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <button
+            onClick={handleFindLoop}
+            disabled={isWorking || frames.length < normalizedMinSpan}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {detecting ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
+            {detecting ? "查找中..." : "自动找闭环"}
+          </button>
+          <button
+            onClick={handleGeneratePreview}
+            disabled={isWorking || selectedFrames.length < 2}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {generatingPreview && <Loader2 size={16} className="animate-spin" />}
+            {generatingPreview ? "生成中..." : "生成最终产物"}
+          </button>
         </div>
 
-        <button
-          onClick={handleAutoLoop}
-          disabled={detecting || frames.length === 0}
-          className="w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-        >
-          <Wand2 className="w-4 h-4" />
-          {detecting ? '检测中...' : '一键找闭环'}
-        </button>
+        <p className="mt-2 text-xs text-gray-500">
+          自动闭环只在 {normalizedMinSpan}-{FIXED_MAX_SPAN} 帧之间搜索。GIF / Sprite / ZIP 三种产物都从同一份最终帧字节派生。
+        </p>
+
+        {workMessage && (
+          <div className="mt-3 rounded-lg bg-gray-50 p-2">
+            <div className="mb-1 flex items-center justify-between gap-3 text-xs text-gray-700">
+              <span>{workMessage}</span>
+              <span>{Math.round(workProgress * 100)}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-gray-200">
+              <div
+                className="h-full rounded-full bg-blue-600 transition-all duration-200"
+                style={{ width: `${Math.max(4, workProgress * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {loopResult && (
-          <div className={`mt-3 text-sm p-2 rounded-lg ${
-            loopResult.includes('未找到') || loopResult.includes('失败')
-              ? 'bg-red-100 text-red-700'
-              : 'bg-green-100 text-green-700'
-          }`}>
+          <div
+            className={`mt-3 rounded-lg p-2 text-sm ${
+              loopResult.includes("失败") || loopResult.includes("未找到")
+                ? "bg-red-50 text-red-700"
+                : "bg-green-50 text-green-700"
+            }`}
+          >
             {loopResult}
           </div>
         )}
-      </div>
-
-      <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-        <h4 className="font-semibold text-gray-900 mb-3">手动生成预览</h4>
-        <p className="text-xs text-gray-500 mb-3">
-          选择至少 2 帧后生成循环预览和精灵图
-        </p>
-        <button
-          onClick={handleGeneratePreview}
-          disabled={frames.filter(f => f.selected).length < 2}
-          className="w-full px-4 py-2.5 bg-gray-800 hover:bg-gray-900 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          生成预览和精灵图
-        </button>
       </div>
     </div>
   );

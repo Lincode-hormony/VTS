@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-cream: #FDFBF7;
+  --color-brand-cream: #f8fafc;
   --color-brand-accent: #1574FF;
 }
 
@@ -17,9 +17,9 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background-image:
-    radial-gradient(at 0% 0%, hsla(38,100%,96%,1) 0, transparent 50%),
-    radial-gradient(at 50% 0%, hsla(22,100%,94%,1) 0, transparent 50%),
-    radial-gradient(at 100% 0%, hsla(45,100%,95%,1) 0, transparent 50%);
+    radial-gradient(at 0% 0%, rgba(239, 246, 255, 1) 0, transparent 50%),
+    radial-gradient(at 50% 0%, rgba(238, 242, 255, 1) 0, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(240, 249, 255, 1) 0, transparent 50%);
 }
 
 .btn-bounce:active {
@@ -31,4 +31,73 @@ body {
     0 10px 25px -5px rgba(0, 0, 0, 0.05),
     0 8px 10px -6px rgba(0, 0, 0, 0.05),
     inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.dual-range {
+  position: relative;
+  height: 72px;
+}
+
+.dual-range__rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 28px;
+  height: 8px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, rgba(226, 232, 240, 1), rgba(226, 232, 240, 1));
+  overflow: hidden;
+}
+
+.dual-range__fill {
+  position: absolute;
+  top: 28px;
+  height: 8px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.9), rgba(79, 70, 229, 0.9));
+}
+
+.dual-range__range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.dual-range__range::-webkit-slider-thumb {
+  pointer-events: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 3px solid #ffffff;
+  background: #2563eb;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.35);
+  cursor: pointer;
+}
+
+.dual-range__range::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 3px solid #ffffff;
+  background: #2563eb;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.35);
+  cursor: pointer;
+}
+
+.dual-range__range::-webkit-slider-runnable-track {
+  height: 8px;
+  background: transparent;
+}
+
+.dual-range__range::-moz-range-track {
+  height: 8px;
+  background: transparent;
 }

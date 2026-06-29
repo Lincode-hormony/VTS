@@ -1,5 +1,23 @@
 const API_BASE_URL = import.meta.env.VITE_SAM2_API_URL || "http://localhost:6006/sam2/api/v1";
 
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  const payload = await response.json().catch(() => null);
+
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    const candidate = record.detail ?? record.message ?? record.error;
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  if (response.statusText) {
+    return response.statusText;
+  }
+
+  return fallback;
+}
+
 export interface UploadResponse {
   task_id: string;
   status: "ready";
@@ -52,11 +70,32 @@ export async function uploadVideo(file: File): Promise<UploadResponse> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Upload failed" }));
-    throw new Error(error.message || "Upload failed");
+    throw new Error(await readErrorMessage(response, "Upload failed"));
   }
 
   return response.json();
+}
+
+export async function importVideoUrl(videoUrl: string): Promise<UploadResponse> {
+  const response = await fetch(`${API_BASE_URL}/import-url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ video_url: videoUrl }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 404 || response.status === 405) {
+      throw new Error("SAM2 后端还没有实现 URL 导入接口：POST /import-url");
+    }
+    throw new Error(await readErrorMessage(response, "Import video URL failed"));
+  }
+
+  return response.json();
+}
+
+export function getActiveTaskIdFromError(message: string): string | null {
+  const match = message.match(/Another SAM2 task is active:\s*([a-f0-9-]+)/i);
+  return match?.[1] ?? null;
 }
 
 export async function sendClick(
@@ -72,8 +111,7 @@ export async function sendClick(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Click failed" }));
-    throw new Error(error.message || "Click failed");
+    throw new Error(await readErrorMessage(response, "Click failed"));
   }
 
   return response.json();
@@ -85,8 +123,7 @@ export async function undoClick(taskId: string): Promise<ClickResponse> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Undo failed" }));
-    throw new Error(error.message || "Undo failed");
+    throw new Error(await readErrorMessage(response, "Undo failed"));
   }
 
   return response.json();
@@ -98,8 +135,7 @@ export async function resetClicks(taskId: string): Promise<ClickResponse> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Reset failed" }));
-    throw new Error(error.message || "Reset failed");
+    throw new Error(await readErrorMessage(response, "Reset failed"));
   }
 
   return response.json();
@@ -111,8 +147,7 @@ export async function startGenerate(taskId: string): Promise<TaskStatus> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Generate failed" }));
-    throw new Error(error.message || "Generate failed");
+    throw new Error(await readErrorMessage(response, "Generate failed"));
   }
 
   return response.json();
@@ -122,8 +157,7 @@ export async function getTaskStatus(taskId: string): Promise<TaskStatus> {
   const response = await fetch(`${API_BASE_URL}/tasks/${taskId}`);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Get status failed" }));
-    throw new Error(error.message || "Get status failed");
+    throw new Error(await readErrorMessage(response, "Get status failed"));
   }
 
   return response.json();
