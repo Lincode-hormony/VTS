@@ -59,6 +59,7 @@ VITE_SAM2_API_URL=http://你的后端地址/sam2/api/v1
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `POST` | `/upload` | 上传视频并创建任务 |
+| `POST` | `/import-url` | 后端从远端视频 URL 下载素材并创建任务 |
 | `POST` | `/tasks/:taskId/click` | 添加前景/背景点 |
 | `POST` | `/tasks/:taskId/undo` | 撤销上一个点 |
 | `POST` | `/tasks/:taskId/reset` | 清空点 |
